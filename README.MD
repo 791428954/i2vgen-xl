@@ -6,12 +6,12 @@
 VGen is an open-source video synthesis codebase developed by the Tongyi Lab of Alibaba Group, featuring state-of-the-art video generative models. This repository includes implementations of the following methods:
 
 
-- [I2VGen-xl: High-quality image-to-video synthesis via cascaded diffusion models](https://i2vgen-xl.github.io/)
-- [VideoComposer: Compositional Video Synthesis with Motion Controllability](https://videocomposer.github.io/)
-- [Hierarchical Spatio-temporal Decoupling for Text-to-Video Generation](https://higen-t2v.github.io/)
-- [A Recipe for Scaling up Text-to-Video Generation with Text-free Videos]()
-- [InstructVideo: Instructing Video Diffusion Models with Human Feedback]()
-- [DreamVideo: Composing Your Dream Videos with Customized Subject and Motion](https://dreamvideo-t2v.github.io/)
+- [I2VGen-xl: High-quality image-to-video synthesis via cascaded diffusion models](https://i2vgen-xl.github.io)
+- [VideoComposer: Compositional Video Synthesis with Motion Controllability](https://videocomposer.github.io)
+- [Hierarchical Spatio-temporal Decoupling for Text-to-Video Generation](https://higen-t2v.github.io)
+- [A Recipe for Scaling up Text-to-Video Generation with Text-free Videos](https://tf-t2v.github.io)
+- [InstructVideo: Instructing Video Diffusion Models with Human Feedback](https://instructvideo.github.io)
+- [DreamVideo: Composing Your Dream Videos with Customized Subject and Motion](https://dreamvideo-t2v.github.io)
 - [VideoLCM: Video Latent Consistency Model](https://arxiv.org/abs/2312.09109)
 - [Modelscope text-to-video technical report](https://arxiv.org/abs/2308.06571)
 
@@ -23,6 +23,10 @@ VGen can produce high-quality videos from the input text, images, desired motion
 
 
 ## 🔥News!!!
+- __[2023.12]__ We have open-sourced the code and models for [DreamTalk](https://github.com/ali-vilab/dreamtalk), which can produce high-quality talking head videos across diverse speaking styles using diffusion models.
+- __[2023.12]__ We release [TF-T2V](https://tf-t2v.github.io) that can scale up existing video generation techniques using text-free videos, significantly enhancing the performance of both [Modelscope-T2V](https://arxiv.org/abs/2308.06571) and [VideoComposer](https://videocomposer.github.io) at the same time.
+- __[2023.12]__ We updated the codebase to support higher versions of xformer (0.0.22), torch2.0+, and removed the dependency on flash_attn.
+- __[2023.12]__ We release [InstructVideo](https://instructvideo.github.io/) that can accept human feedback signals to improve VLDM
 - __[2023.12]__ We release the diffusion based expressive talking head generation [DreamTalk](https://dreamtalk-project.github.io)
 - __[2023.12]__ We release the high-efficiency video generation method [VideoLCM](https://arxiv.org/abs/2312.09109)
 - __[2023.12]__ We release the code and model of [I2VGen-XL](https://i2vgen-xl.github.io) and the [ModelScope T2V](https://arxiv.org/abs/2308.06571)
@@ -34,6 +38,8 @@ VGen can produce high-quality videos from the input text, images, desired motion
 ## TODO
 - [x] Release the technical papers and webpage of [I2VGen-XL](doc/i2vgen-xl.md)
 - [x] Release the code and pretrained models that can generate 1280x720 videos
+- [x] Release the code and  models of [DreamTalk](https://github.com/ali-vilab/dreamtalk) that can generate expressive talking head
+- [ ] Release the code and pretrained models of [HumanDiff]()
 - [ ] Release models optimized specifically for the human body and faces
 - [ ] Updated version can fully maintain the ID and capture large and accurate motions simultaneously
 - [ ] Release other methods and the corresponding models
@@ -98,6 +104,10 @@ After the training is completed, you can perform inference on the model using th
 python inference.py --cfg configs/t2v_infer.yaml
 ```
 Then you can find the videos you generated in the `workspace/experiments/test_img_01` directory. For specific configurations such as data, models, seed, etc., please refer to the `t2v_infer.yaml` file.
+
+
+*If you want to directly load our previously open-sourced [Modelscope T2V model](https://huggingface.co/damo-vilab/modelscope-damo-text-to-video-synthesis/tree/main), please refer to [this link](https://github.com/damo-vilab/i2vgen-xl/issues/31).*
+
 
 <!-- <table>
 <center>
@@ -260,16 +270,16 @@ If this repo is useful to you, please cite our corresponding technical paper.
 
 
 ```bibtex
-@article{2023i2vgenxl,
-  title={I2VGen-XL: High-Quality Image-to-Video Synthesis via Cascaded Diffusion Models},
-  author={Zhang, Shiwei and Wang, Jiayu and Zhang, Yingya and Zhao, Kang and Yuan, Hangjie and Qing, Zhiwu and Wang, Xiang  and Zhao, Deli and Zhou, Jingren},
-  booktitle={arXiv preprint arXiv:2311.04145},
-  year={2023}
-}
 @article{2023videocomposer,
   title={VideoComposer: Compositional Video Synthesis with Motion Controllability},
   author={Wang, Xiang and Yuan, Hangjie and Zhang, Shiwei and Chen, Dayou and Wang, Jiuniu, and Zhang, Yingya, and Shen, Yujun, and Zhao, Deli and Zhou, Jingren},
   booktitle={arXiv preprint arXiv:2306.02018},
+  year={2023}
+}
+@article{2023i2vgenxl,
+  title={I2VGen-XL: High-Quality Image-to-Video Synthesis via Cascaded Diffusion Models},
+  author={Zhang, Shiwei and Wang, Jiayu and Zhang, Yingya and Zhao, Kang and Yuan, Hangjie and Qing, Zhiwu and Wang, Xiang  and Zhao, Deli and Zhou, Jingren},
+  booktitle={arXiv preprint arXiv:2311.04145},
   year={2023}
 }
 @article{wang2023modelscope,
@@ -301,6 +311,18 @@ If this repo is useful to you, please cite our corresponding technical paper.
   author={Ma, Yifeng and Zhang, Shiwei and Wang, Jiayu and Wang, Xiang and Zhang, Yingya and Deng Zhidong},
   journal={arXiv preprint arXiv:2312.09767},
   year={2023}
+}
+@article{2023InstructVideo,
+  title={InstructVideo: Instructing Video Diffusion Models with Human Feedback},
+  author={Yuan, Hangjie and Zhang, Shiwei and Wang, Xiang and Wei, Yujie and Feng, Tao and Pan, Yining and Zhang, Yingya and Liu, Ziwei and Albanie, Samuel and Ni, Dong},
+  booktitle={arXiv preprint arXiv:2312.12490},
+  year={2023}
+}
+@article{TFT2V,
+ title={A Recipe for Scaling up Text-to-Video Generation with Text-free Videos},
+ author={Wang, Xiang and Zhang, Shiwei and Yuan, Hangjie and Qing, Zhiwu and Gong, Biao and Zhang, Yingya and Shen, Yujun and Gao, Changxin and Sang, Nong},
+ journal={arXiv preprint arXiv:2312.15770},
+ year={2023}
 }
 ```
 

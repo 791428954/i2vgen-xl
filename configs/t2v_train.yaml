@@ -85,8 +85,13 @@ Pretrain: {
     'type': pretrain_specific_strategies,
     'fix_weight': False,
     'grad_scale': 0.5,
+<<<<<<< HEAD
     'resume_checkpoint': '../models/damo/text-to-video-synthesis/model_scope_0267000.pth',
     'sd_keys_path': '../models/damo/I2VGen-XL/stable_diffusion_image_key_temporal_attention_x1.json',
+=======
+    'resume_checkpoint': 'workspace/model_bk/model_scope_0267000.pth',
+    'sd_keys_path': 'data/stable_diffusion_image_key_temporal_attention_x1.json',
+>>>>>>> 669574219486ff84b9dc59e96d4f792e7ee01af7
 }
 
 chunk_size: 4
