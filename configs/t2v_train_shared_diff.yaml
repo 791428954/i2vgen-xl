@@ -1,17 +1,16 @@
-TASK_TYPE: train_t2v_entrance
+TASK_TYPE: train_t2v_share_diffusion_enterance
 ENABLE: true
 use_ema: false
 num_workers: 6
-#frame_lens: [1, 16, 16, 16, 16, 32, 32, 32]
 frame_lens: [16, 16, 16, 16, 16, 32, 32, 32]
-# sample_fps: [1,  8,  16, 16, 16, 8,  16, 16]
 sample_fps: [8,  8,  16, 16, 16, 8,  16, 16]
 resolution: [448, 256]
 vit_resolution: [224, 224]
+shared_diffusion_steps: [0,0.5,0.75,0.875,0.9375,1]
 vid_dataset: {
     'type': 'VideoDataset',
-    'data_list': ['data/vid_list.txt', ],
-    'data_dir_list': ['data/videos/', ],
+    'data_list': ['data/t2v_final.txt', ],
+    'data_dir_list': ['data/WebVid/', ],
     'vit_resolution': [224, 224],
     'resolution': [448, 256],
     'get_first_frame': True,
@@ -32,7 +31,7 @@ embedder: {
     'pretrained': '../models/damo/I2VGen-XL/open_clip_pytorch_model.bin'
 }
 UNet: {
-    'type': 'UNetSD_T2VBase',
+    'type': 'UNetSD_SHARED_T2VBase',
     'in_dim': 4,
     'y_dim': 1024,
     'upper_len': 128,
@@ -72,14 +71,14 @@ batch_sizes: {
     "16": 4,
     "32": 2
 }
-visual_train: {
-    'type': 'VisualTrainTextImageToVideo',
-    'partial_keys': [
-        ['y', 'fps'],
-    ],
-    'use_offset_noise': False,
-    'guide_scale': 9.0,
-}
+# visual_train: {
+#     'type': 'VisualTrainTextImageToVideo',
+#     'partial_keys': [
+#         ['y', 'fps'],
+#     ],
+#     'use_offset_noise': False,
+#     'guide_scale': 9.0,
+# }
 
 Pretrain: {
     'type': pretrain_specific_strategies,
@@ -101,9 +100,11 @@ num_steps: 1000000
 
 use_zero_infer: True
 viz_interval: 5        # 200
-save_ckp_interval: 5   # 500
+save_ckp_interval: 50   # 500
 
 # Log
 log_dir: "workspace/experiments"
 log_interval: 1
 seed: 8888
+
+debug: True

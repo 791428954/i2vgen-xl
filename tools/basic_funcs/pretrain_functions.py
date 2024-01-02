@@ -8,7 +8,7 @@ from utils.registry_class import PRETRAIN
 
 @PRETRAIN.register_function()
 def pretrain_specific_strategies(
-        model, 
+        model,
         resume_checkpoint,
         sd_keys_path=None,
         grad_scale=1,
@@ -19,7 +19,12 @@ def pretrain_specific_strategies(
     state_dict = torch.load(resume_checkpoint, map_location='cpu')
     if 'state_dict' in state_dict:
         state_dict = state_dict['state_dict']
-    
+    key_list = state_dict.keys()
+    print(list(key_list))
+    state_dict['conv_out_shared.0.weight'] = state_dict['out.0.weight']
+    state_dict['conv_out_shared.0.bias'] = state_dict['out.0.bias']
+    state_dict['conv_out_shared.2.weight'] = state_dict['out.2.weight'].repeat_interleave(2,dim=0)
+    state_dict['conv_out_shared.2.bias'] = state_dict['out.2.bias'].repeat_interleave(2)
     # [1] load model
     try:
         ret = model.load_state_dict(state_dict, strict=False)
@@ -36,7 +41,7 @@ def pretrain_specific_strategies(
                 continue
             model_dict[skey].copy_(item)
         model.load_state_dict(model_dict)
-    
+
     # [2] assign strategies
     total_size = 0
     state_dict = {} if sd_keys_path is None else json.load(open(sd_keys_path))
@@ -47,7 +52,7 @@ def pretrain_specific_strategies(
                 p.requires_grad=False
             else:
                 p.register_hook(lambda grad: grad_scale * grad)
-    
+
     resume_step = int(os.path.basename(resume_checkpoint).split('_')[-1].split('.')[0])
     logging.info(f'Successfully load step {resume_step} model from {resume_checkpoint}')
     logging.info(f'load a fixed model with {int(total_size / (1024 ** 2))}M parameters')

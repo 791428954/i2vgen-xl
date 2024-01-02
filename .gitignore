@@ -13,4 +13,8 @@
 cache*
 .DS_Store
 *DS_Store
+*pyc
+log*
 outputs/
+data/
+models
