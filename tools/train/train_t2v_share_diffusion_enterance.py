@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image
 import torch.optim as optim
 from einops import rearrange
+import wandb
 import torch.cuda.amp as amp
 from importlib import reload
 from copy import deepcopy, copy
@@ -95,6 +96,18 @@ def worker(gpu, cfg):
         logging.info(f'Save all the file in to dir {cfg.log_dir}')
         logging.info(f"Going into i2v_img_fullid_vidcom function on {gpu} gpu")
 
+
+    config={
+    "learning_rate": 0.02,
+    "architecture": "CNN",
+    "dataset": "CIFAR-100",
+    "epochs": 10,
+    }
+    wandb.init(config=config,
+            project="i2v_shared_diff",
+            dir=str(log_dir),
+            job_type="training",
+            reinit=True)
     # [Diffusion]  build diffusion settings
     diffusion = DIFFUSION.build(cfg.Diffusion)
 
@@ -289,6 +302,12 @@ def worker(gpu, cfg):
 
         if cfg.rank == 0 and step % cfg.log_interval == 0: # cfg.log_interval: 100
             logging.info(f'Step: {step}/{cfg.num_steps} Loss: {loss.item():.3f} scale: {scaler.get_scale():.1f} LR: {scheduler.get_lr():.7f} Double_frame_flag: {double_frame_flag}')
+        wandb.log(f'Step: {step} Loss: {loss.item():.3f} scale: {scaler.get_scale():.1f} LR: {scheduler.get_lr():.7f}')
+        if double_frame_flag:
+            wandb.log(f'Step: {step} double_Loss: {loss.item():.3f} scale: {scaler.get_scale():.1f} LR: {scheduler.get_lr():.7f}')
+        else:
+            wandb.log(f'Step: {step} non_double_Loss: {loss.item():.3f} scale: {scaler.get_scale():.1f} LR: {scheduler.get_lr():.7f}')
+
 
         # # Visualization
         # if step == resume_step or step == cfg.num_steps or step % cfg.viz_interval == 0:

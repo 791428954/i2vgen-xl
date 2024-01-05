@@ -31,7 +31,8 @@ embedder: {
     'pretrained': '../models/damo/I2VGen-XL/open_clip_pytorch_model.bin'
 }
 UNet: {
-    'type': 'UNetSD_SHARED_T2VBase',
+    # 'type': 'UNetSD_SHARED_T2VBase',
+    'type': 'UNetSD_T2VBase',
     'in_dim': 4,
     'y_dim': 1024,
     'upper_len': 128,

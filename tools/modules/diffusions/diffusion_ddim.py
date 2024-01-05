@@ -192,8 +192,10 @@ class DiffusionDDIM(object):
             # classifier-free guidance
             # (model_kwargs[0]: conditional kwargs; model_kwargs[1]: non-conditional kwargs)
             assert isinstance(model_kwargs, list) and len(model_kwargs) == 2
-            y_out = model(xt, self._scale_timesteps(t), **model_kwargs[0],double_frame_flag = double_frame_flag)
-            u_out = model(xt, self._scale_timesteps(t), **model_kwargs[1],double_frame_flag = double_frame_flag)
+            # y_out = model(xt, self._scale_timesteps(t), **model_kwargs[0],double_frame_flag = double_frame_flag)
+            # u_out = model(xt, self._scale_timesteps(t), **model_kwargs[1],double_frame_flag = double_frame_flag)
+            y_out = model(xt, self._scale_timesteps(t), **model_kwargs[0])
+            u_out = model(xt, self._scale_timesteps(t), **model_kwargs[1])
             dim = y_out.size(1) if self.var_type.startswith('fixed') else y_out.size(1) // 2
             out = torch.cat([
                 u_out[:, :dim] + guide_scale * (y_out[:, :dim] - u_out[:, :dim]),

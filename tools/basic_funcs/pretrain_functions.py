@@ -19,12 +19,12 @@ def pretrain_specific_strategies(
     state_dict = torch.load(resume_checkpoint, map_location='cpu')
     if 'state_dict' in state_dict:
         state_dict = state_dict['state_dict']
-    key_list = state_dict.keys()
-    print(list(key_list))
-    state_dict['conv_out_shared.0.weight'] = state_dict['out.0.weight']
-    state_dict['conv_out_shared.0.bias'] = state_dict['out.0.bias']
-    state_dict['conv_out_shared.2.weight'] = state_dict['out.2.weight'].repeat_interleave(2,dim=0)
-    state_dict['conv_out_shared.2.bias'] = state_dict['out.2.bias'].repeat_interleave(2)
+    # key_list = state_dict.keys()
+    # print(list(key_list))
+    # state_dict['conv_out_shared.0.weight'] = state_dict['out.0.weight']
+    # state_dict['conv_out_shared.0.bias'] = state_dict['out.0.bias']
+    # state_dict['conv_out_shared.2.weight'] = state_dict['out.2.weight'].repeat_interleave(2,dim=0)
+    # state_dict['conv_out_shared.2.bias'] = state_dict['out.2.bias'].repeat_interleave(2)
     # [1] load model
     try:
         ret = model.load_state_dict(state_dict, strict=False)
