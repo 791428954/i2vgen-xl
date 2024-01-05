@@ -10,7 +10,7 @@ import logging
 import datetime
 import numpy as np
 from PIL import Image
-import torch.optim as optim 
+import torch.optim as optim
 from einops import rearrange
 import torch.cuda.amp as amp
 from importlib import reload
@@ -34,13 +34,13 @@ from utils.registry_class import ENGINE, MODEL, DATASETS, EMBEDDER, AUTO_ENCODER
 
 
 @ENGINE.register_function()
-def train_t2v_entrance(cfg_update,  **kwargs):
+def train_t2v_artdiff_entrance(cfg_update,  **kwargs):
     for k, v in cfg_update.items():
         if isinstance(v, dict) and k in cfg:
             cfg[k].update(v)
         else:
             cfg[k] = v
-    
+
     if not 'MASTER_ADDR' in os.environ:
         os.environ['MASTER_ADDR']='localhost'
         os.environ['MASTER_PORT']= find_free_port()
@@ -54,7 +54,7 @@ def train_t2v_entrance(cfg_update,  **kwargs):
     else:
         cfg.gpus_per_machine = torch.cuda.device_count()
         cfg.world_size = cfg.pmi_world_size * cfg.gpus_per_machine
-    
+
     if cfg.world_size == 1:
         worker(0, cfg)
     else:
@@ -68,12 +68,12 @@ def worker(gpu, cfg):
     '''
     cfg.gpu = gpu
     cfg.rank = cfg.pmi_rank * cfg.gpus_per_machine + gpu
-    
+
     if not cfg.debug:
         torch.cuda.set_device(gpu)
         torch.backends.cudnn.benchmark = True
         dist.init_process_group(backend='nccl', world_size=cfg.world_size, rank=cfg.rank)
-    
+
     # [Log] Save logging
     log_dir = generalized_all_gather(cfg.log_dir)[0]
     exp_name = osp.basename(cfg.cfg_file).split('.')[0]
@@ -102,7 +102,7 @@ def worker(gpu, cfg):
     cfg.max_frames = cfg.frame_lens[cfg.rank % len_frames]
     cfg.batch_size = cfg.batch_sizes[str(cfg.max_frames)]
     cfg.sample_fps = cfg.sample_fps[cfg.rank % len_fps]
-    
+
     if cfg.rank == 0:
         logging.info(f'Currnt worker with max_frames={cfg.max_frames}, batch_size={cfg.batch_size}, sample_fps={cfg.sample_fps}')
 
@@ -115,23 +115,23 @@ def worker(gpu, cfg):
         data.Resize(cfg.vit_resolution),
         data.ToTensor(),
         data.Normalize(mean=cfg.vit_mean, std=cfg.vit_std)])
-    
+
     if cfg.max_frames == 1:
         cfg.sample_fps = 1
         dataset = DATASETS.build(cfg.img_dataset, transforms=train_trans, vit_transforms=vit_trans)
     else:
         dataset = DATASETS.build(cfg.vid_dataset, sample_fps=cfg.sample_fps, transforms=train_trans, vit_transforms=vit_trans, max_frames=cfg.max_frames)
-    
+
     sampler = DistributedSampler(dataset, num_replicas=cfg.world_size, rank=cfg.rank) if (cfg.world_size > 1 and not cfg.debug) else None
     dataloader = DataLoader(
-        dataset, 
+        dataset,
         sampler=sampler,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_workers,
         pin_memory=True,
         prefetch_factor=cfg.prefetch_factor)
-    rank_iter = iter(dataloader) 
-    
+    rank_iter = iter(dataloader)
+
     # [Model] embedder
     clip_encoder = EMBEDDER.build(cfg.embedder)
     clip_encoder.model.to(gpu)
@@ -139,14 +139,14 @@ def worker(gpu, cfg):
     _, _, zero_y_negative = clip_encoder(text=cfg.negative_prompt)
     zero_y, zero_y_negative = zero_y.detach(), zero_y_negative.detach()
 
-    # [Model] auotoencoder 
+    # [Model] auotoencoder
     autoencoder = AUTO_ENCODER.build(cfg.auto_encoder)
     autoencoder.eval() # freeze
     for param in autoencoder.parameters():
         param.requires_grad = False
     autoencoder.cuda()
 
-    # [Model] UNet 
+    # [Model] UNet
     model = MODEL.build(cfg.UNet, zero_y=zero_y_negative)
     model = model.to(gpu)
 
@@ -157,7 +157,7 @@ def worker(gpu, cfg):
     if cfg.use_ema:
         ema = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
         ema = type(ema)([(k, ema[k].data.clone()) for k in list(ema.keys())[cfg.rank::cfg.world_size]])
-    
+
     # optimizer
     optimizer = optim.AdamW(params=model.parameters(),
             lr=cfg.lr, weight_decay=cfg.weight_decay)
@@ -177,25 +177,25 @@ def worker(gpu, cfg):
         warmup_steps=cfg.warmup_steps,  # 10
         total_steps=cfg.num_steps,      # 200000
         decay_mode=cfg.decay_mode)      # 'cosine'
-    
+
     # [Visual]
     viz_num = min(cfg.batch_size, 8)
     visual_func = VISUAL.build(
         cfg.visual_train,
         cfg_global=cfg,
-        viz_num=viz_num, 
-        diffusion=diffusion, 
+        viz_num=viz_num,
+        diffusion=diffusion,
         autoencoder=autoencoder)
-    
-    for step in range(resume_step, cfg.num_steps + 1): 
+
+    for step in range(resume_step, cfg.num_steps + 1):
         model.train()
-        
+
         try:
             batch = next(rank_iter)
         except StopIteration:
             rank_iter = iter(dataloader)
             batch = next(rank_iter)
-        
+
         batch = to_device(batch, gpu, non_blocking=True)
         ref_frame, _, video_data, captions, video_key = batch
         batch_size, frames_num, _, _, _ = video_data.shape
@@ -222,24 +222,24 @@ def worker(gpu, cfg):
                 y_words[torch.rand(y_words.size(0)) < cfg.p_zero, :] = zero_y_negative
             except:
                 pass
-        
+
         # forward
         model_kwargs = {'y': y_words,  'fps': fps_tensor}
         if cfg.use_fsdp:
-            loss = diffusion.loss(x0=video_data, 
+            loss = diffusion.loss(x0=video_data,
                 t=t_round, model=model, model_kwargs=model_kwargs,
-                use_div_loss=cfg.use_div_loss) 
+                use_div_loss=cfg.use_div_loss)
             loss = loss.mean()
         else:
             with amp.autocast(enabled=cfg.use_fp16):
                 loss = diffusion.loss(
-                        x0=video_data, 
-                        t=t_round, 
-                        model=model, 
-                        model_kwargs=model_kwargs, 
+                        x0=video_data,
+                        t=t_round,
+                        model=model,
+                        model_kwargs=model_kwargs,
                         use_div_loss=cfg.use_div_loss) # cfg.use_div_loss: False    loss: [80]
                 loss = loss.mean()
-        
+
         # backward
         if cfg.use_fsdp:
             optimizer.zero_grad()
@@ -251,10 +251,10 @@ def worker(gpu, cfg):
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
-        
+
         if not cfg.use_fsdp:
             scheduler.step()
-        
+
         # ema update
         if cfg.use_ema:
             temp_state_dict = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
@@ -263,7 +263,7 @@ def worker(gpu, cfg):
 
         all_reduce(loss)
         loss = loss / cfg.world_size
-        
+
         if cfg.rank == 0 and step % cfg.log_interval == 0: # cfg.log_interval: 100
             logging.info(f'Step: {step}/{cfg.num_steps} Loss: {loss.item():.3f} scale: {scaler.get_scale():.1f} LR: {scheduler.get_lr():.7f}')
 
@@ -282,12 +282,12 @@ def worker(gpu, cfg):
                         }
                     ]
                     input_kwards = {
-                        'model': model, 'video_data': video_data[:viz_num], 'step': step, 
+                        'model': model, 'video_data': video_data[:viz_num], 'step': step,
                         'ref_frame': ref_frame[:viz_num], 'captions': captions[:viz_num]}
                     visual_func.run(visual_kwards=visual_kwards, **input_kwards)
                 except Exception as e:
                     logging.info(f'Save videos with exception {e}')
-        
+
         # Save checkpoint
         if step == cfg.num_steps or step % cfg.save_ckp_interval == 0 or step == resume_step:
             os.makedirs(osp.join(cfg.log_dir, 'checkpoints'), exist_ok=True)
@@ -307,10 +307,10 @@ def worker(gpu, cfg):
                     'step': step}
                 torch.save(save_dict, local_model_path)
                 logging.info(f'Save model to {local_model_path}')
-    
+
     if cfg.rank == 0:
         logging.info('Congratulations! The training is completed!')
-    
+
     # synchronize to finish some processes
     if not cfg.debug:
         torch.cuda.synchronize()

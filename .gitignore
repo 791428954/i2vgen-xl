@@ -2,6 +2,7 @@
 *.pt
 *.mov
 *.pth
+*.json
 *.mov
 *.npz
 *.npy
@@ -16,4 +17,5 @@ cache*
 log*
 outputs/
 data/
+workspace*
 models

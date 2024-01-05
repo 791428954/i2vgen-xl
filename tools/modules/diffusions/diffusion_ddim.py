@@ -613,7 +613,7 @@ class DiffusionDDIM(object):
         if index == 4:
             double_frame_flag = False
         else:
-            double_frame_flag = random.choice([True, False])
+            double_frame_flag = random.choice([True, False,True])
 
         bsz,c,f,h,w = x0.shape
         # # x0_half = torch.zeros(bsz,c,int(f/frame_scale),h,w).to(torch.device("cuda"))
@@ -641,6 +641,7 @@ class DiffusionDDIM(object):
                 xt,'b c (i f) h w -> b c f h w ', 'mean',
                 i=2
             )
+            xt = xt.repeat_interleave(2,dim=2)
 
         # compute loss
         if self.loss_type in ['kl', 'rescaled_kl']:
@@ -716,7 +717,7 @@ class DiffusionDDIM(object):
     def art_loss(self, x0, t, model, model_kwargs={}, noise=None, weight = None, use_div_loss= False,decay_rate= 0.8):
 
         # noise = torch.randn_like(x0) if noise is None else noise # [80, 4, 8, 32, 32]
-        noise = self.artdiff_sample_loss(x0, noise,decay_rate=)
+        noise = self.artdiff_sample_loss(x0, noise,decay_rate=0.1)
 
         xt = self.q_sample(x0, t, noise=noise)
 

@@ -173,7 +173,7 @@ def worker(gpu, cfg):
 
     resume_step = 1
     model, resume_step = PRETRAIN.build(cfg.Pretrain, model=model)
-    del model.out
+    # del model.out
     torch.cuda.empty_cache()
 
     if cfg.use_ema:
@@ -302,11 +302,14 @@ def worker(gpu, cfg):
 
         if cfg.rank == 0 and step % cfg.log_interval == 0: # cfg.log_interval: 100
             logging.info(f'Step: {step}/{cfg.num_steps} Loss: {loss.item():.3f} scale: {scaler.get_scale():.1f} LR: {scheduler.get_lr():.7f} Double_frame_flag: {double_frame_flag}')
-        wandb.log(f'Step: {step} Loss: {loss.item():.3f} scale: {scaler.get_scale():.1f} LR: {scheduler.get_lr():.7f}')
+        wandb.log({
+            "Loss":loss.item(),
+            "scale":scaler.get_scale(),
+            "LR":scheduler.get_lr()})
         if double_frame_flag:
-            wandb.log(f'Step: {step} double_Loss: {loss.item():.3f} scale: {scaler.get_scale():.1f} LR: {scheduler.get_lr():.7f}')
+            wandb.log({"double_Loss":loss.item()})
         else:
-            wandb.log(f'Step: {step} non_double_Loss: {loss.item():.3f} scale: {scaler.get_scale():.1f} LR: {scheduler.get_lr():.7f}')
+            wandb.log({'non_double_Loss':loss.item()})
 
 
         # # Visualization
@@ -352,7 +355,7 @@ def worker(gpu, cfg):
 
     if cfg.rank == 0:
         logging.info('Congratulations! The training is completed!')
-
+    wandb.finish()
     # synchronize to finish some processes
     if not cfg.debug:
         torch.cuda.synchronize()
