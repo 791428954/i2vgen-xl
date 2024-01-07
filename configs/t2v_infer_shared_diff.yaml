@@ -14,4 +14,4 @@ round: 4
 seed: 8888
 test_list_path: data/text_img_for_t2v.txt
 vldm_cfg: configs/t2v_train_shared_diff.yaml
-test_model: workspace/experiments/t2v_train_shared_diff/checkpoints/non_ema_00287900.pth
+test_model: /nfs/home/mengtianhui/sgh/i2vgen-xl/workspace/experiments/t2v_train_shared_diff/checkpoints/non_ema_00267200.pth

@@ -33,7 +33,7 @@ def gen_text_image(captions, text_size):
     font = ImageFont.truetype('data/font/DejaVuSans.ttf', size=font_size)
     text_image_list = []
     for text in captions:
-        txt_img = Image.new("RGB", (text_size, text_size), color="white") 
+        txt_img = Image.new("RGB", (text_size, text_size), color="white")
         draw = ImageDraw.Draw(txt_img)
         lines = "\n".join(text[start:start + num_char] for start in range(0, len(text), num_char))
         draw.text((0, 0), lines, fill="black", font=font)
@@ -47,15 +47,15 @@ def gen_text_image(captions, text_size):
 def save_video_refimg_and_text(
     local_path,
     ref_frame,
-    gen_video, 
-    captions, 
-    mean=[0.5, 0.5, 0.5], 
-    std=[0.5, 0.5, 0.5], 
-    text_size=256, 
-    nrow=4, 
+    gen_video,
+    captions,
+    mean=[0.5, 0.5, 0.5],
+    std=[0.5, 0.5, 0.5],
+    text_size=256,
+    nrow=4,
     save_fps=8,
     retry=5):
-    ''' 
+    '''
     gen_video: BxCxFxHxW
     '''
     nrow = max(int(gen_video.size(0) / 2), 1)
@@ -72,7 +72,7 @@ def save_video_refimg_and_text(
     ref_frame.clamp_(0, 1)
     ref_frame = ref_frame * 255.0
     ref_frame = rearrange(ref_frame, 'b c f h w -> b f h w c')
-    
+
     gen_video = gen_video.mul_(vid_std).add_(vid_mean)  # 8x3x16x256x384
     gen_video.clamp_(0, 1)
     gen_video = gen_video * 255.0
@@ -109,15 +109,15 @@ def save_video_refimg_and_text(
 def save_i2vgen_video(
     local_path,
     image_id,
-    gen_video, 
-    captions, 
-    mean=[0.5, 0.5, 0.5], 
-    std=[0.5, 0.5, 0.5], 
-    text_size=256, 
+    gen_video,
+    captions,
+    mean=[0.5, 0.5, 0.5],
+    std=[0.5, 0.5, 0.5],
+    text_size=256,
     retry=5,
     save_fps = 8
 ):
-    ''' 
+    '''
     Save both the generated video and the input conditions.
     '''
     vid_mean = torch.tensor(mean, device=gen_video.device).view(1, -1, 1, 1, 1) #ncfhw
@@ -157,7 +157,7 @@ def save_i2vgen_video(
         except Exception as e:
             exception = e
             continue
-    
+
     if exception is not None:
         raise exception
 
@@ -165,11 +165,11 @@ def save_i2vgen_video(
 @torch.no_grad()
 def save_i2vgen_video_safe(
     local_path,
-    gen_video, 
-    captions, 
-    mean=[0.5, 0.5, 0.5], 
-    std=[0.5, 0.5, 0.5], 
-    text_size=256, 
+    gen_video,
+    captions,
+    mean=[0.5, 0.5, 0.5],
+    std=[0.5, 0.5, 0.5],
+    text_size=256,
     retry=5,
     save_fps = 8
 ):
@@ -202,14 +202,14 @@ def save_i2vgen_video_safe(
                         if ratio > 0.4: continue
                     tpth = os.path.join(frame_dir, '%04d.png' % (fid+1))
                     cv2.imwrite(tpth, frame[:,:,::-1], [int(cv2.IMWRITE_JPEG_QUALITY), 100])
-                cmd = f'ffmpeg -y -f image2 -loglevel quiet -framerate {save_fps} -i {frame_dir}/%04d.png -vcodec libx264 -crf 17  -pix_fmt yuv420p {local_path}'
-                os.system(cmd) 
+                cmd = f'ffmpeg -y -f image2 -loglevel quiet -framerate {save_fps} -i {frame_dir}/%04d.png -vcodec libx264 -crf 17  {local_path}'
+                os.system(cmd)
                 os.system(f'rm -rf {frame_dir}')
             break
         except Exception as e:
             exception = e
             continue
-    
+
     if exception is not None:
         raise exception
 

@@ -27,7 +27,7 @@ embedder: {
     'type': 'FrozenOpenCLIPTtxtVisualEmbedder',
     'layer': 'penultimate',
     'vit_resolution': [224, 224],
-    'pretrained': 'models/open_clip_pytorch_model.bin'
+    'pretrained': '../models/damo/I2VGen-XL/open_clip_pytorch_model.bin'
 }
 UNet: {
     'type': 'UNetSD_I2VGen',
@@ -78,15 +78,15 @@ visual_train: {
         ['y', 'image', 'local_image', 'fps']
     ],
     'use_offset_noise': True,
-    'guide_scale': 9.0, 
+    'guide_scale': 9.0,
 }
 
 Pretrain: {
     'type': pretrain_specific_strategies,
     'fix_weight': False,
     'grad_scale': 0.5,
-    'resume_checkpoint': 'models/i2vgen_xl_00854500.pth',
-    'sd_keys_path': 'models/stable_diffusion_image_key_temporal_attention_x1.json',
+    'resume_checkpoint': '../models/damo/I2VGen-XL/i2vgen_xl_00854500.pth',
+    'sd_keys_path': '../models/damo/I2VGen-XL/stable_diffusion_image_key_temporal_attention_x1.json',
 }
 
 chunk_size: 4

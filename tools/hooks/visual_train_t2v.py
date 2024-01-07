@@ -29,10 +29,10 @@ class VisualTrainTextToVideo(object):
             model_kwargs[0][partial_key] = full_model_kwargs[0][partial_key]
             model_kwargs[1][partial_key] = full_model_kwargs[1][partial_key]
         return model_kwargs
-    
+
     @torch.no_grad()
-    def run(self, 
-            model, 
+    def run(self,
+            model,
             video_data,
             captions,
             step=0,
@@ -47,7 +47,7 @@ class VisualTrainTextToVideo(object):
             noise_strength = getattr(cfg, 'noise_strength', 0)
             b, c, f, *_ = video_data[:viz_num].shape
             noise = noise + noise_strength * torch.randn(b, c, f, 1, 1, device=video_data.device)
-        
+
         # print memory
         pynvml.nvmlInit()
         handle=pynvml.nvmlDeviceGetHandleByIndex(0)
@@ -58,14 +58,15 @@ class VisualTrainTextToVideo(object):
             model_kwargs = self.prepare_model_kwargs(keys, visual_kwards)
             pre_name = '_'.join(keys)
             with amp.autocast(enabled=cfg.use_fp16):
-                video_data = self.diffusion.ddim_sample_loop(
+                video_data = self.diffusion.ddim_shared_diff_sample_loop(
                     noise=noise.clone(),
                     model=model.eval(),
                     model_kwargs=model_kwargs,
                     guide_scale=self.guide_scale,
                     ddim_timesteps=cfg.ddim_timesteps,
-                    eta=0.0)
-            
+                    eta=0.0,
+                    shared_diffusion_steps=cfg.shared_diffusion_steps)
+
             video_data = 1. / cfg.scale_factor * video_data # [64, 4, 32, 48]
             video_data = rearrange(video_data, 'b c f h w -> (b f) c h w')
             chunk_size = min(cfg.decoder_bs, video_data.shape[0])
@@ -86,5 +87,5 @@ class VisualTrainTextToVideo(object):
                 save_video_refimg_and_text(local_path, ref_frame.cpu(), video_data.cpu(),  captions, cfg.mean, cfg.std, text_size)
             except Exception as e:
                 logging.info(f'Step: {step} save text or video error with {e}')
-    
+
 

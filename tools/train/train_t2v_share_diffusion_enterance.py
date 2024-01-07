@@ -98,10 +98,7 @@ def worker(gpu, cfg):
 
 
     config={
-    "learning_rate": 0.02,
-    "architecture": "CNN",
-    "dataset": "CIFAR-100",
-    "epochs": 10,
+    "learning_rate": 0.003,
     }
     wandb.init(config=config,
             project="i2v_shared_diff",
@@ -263,8 +260,7 @@ def worker(gpu, cfg):
                         model=model,
                         model_kwargs=model_kwargs,
                         use_div_loss=cfg.use_div_loss,
-                        shared_diffusion_steps = shared_diffusion_steps,
-                        index =index,) if shared_diffusion_steps else \
+                        index =index) if shared_diffusion_steps else \
                         diffusion.loss(
                         x0=video_data,
                         t=t_round,

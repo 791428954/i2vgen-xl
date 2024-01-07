@@ -193,7 +193,9 @@ class DiffusionDDIM(object):
             # (model_kwargs[0]: conditional kwargs; model_kwargs[1]: non-conditional kwargs)
             assert isinstance(model_kwargs, list) and len(model_kwargs) == 2
             # y_out = model(xt, self._scale_timesteps(t), **model_kwargs[0],double_frame_flag = double_frame_flag)
-            # u_out = model(xt, self._scale_timesteps(t), **model_kwargs[1],double_frame_flag = double_frame_flag)
+            # u_out = model(xt, self._scale_timesteps(t), **model_kwargs[1],double_frame_flag = double_frame_flag).
+            if double_frame_flag:
+                xt=xt.repeat_interleave(2,dim=2)
             y_out = model(xt, self._scale_timesteps(t), **model_kwargs[0])
             u_out = model(xt, self._scale_timesteps(t), **model_kwargs[1])
             dim = y_out.size(1) if self.var_type.startswith('fixed') else y_out.size(1) // 2
@@ -220,8 +222,7 @@ class DiffusionDDIM(object):
             log_var = _i(self.posterior_log_variance_clipped, t, xt)
 
         # compute mean and x0
-        if double_frame_flag:
-            xt=xt.repeat_interleave(2,dim=2)
+
         if self.mean_type == 'x_{t-1}':
             mu = out  # x_{t-1}
             x0 = _i(1.0 / self.posterior_mean_coef1, t, xt) * mu - \
@@ -607,7 +608,7 @@ class DiffusionDDIM(object):
         #return t.float()
 
     def shared_diff_loss(self, x0, t, model, model_kwargs={}, noise=None, weight = None,
-                         use_div_loss= False,shared_diffusion_steps = None,index = None):  #index = 0 ~ 4
+                         use_div_loss= False,index = None):  #index = 0 ~ 4
         frame_scale = 2 ** index
 
         if index == 4:
@@ -627,21 +628,32 @@ class DiffusionDDIM(object):
         # x0 = x0_cache
         model_kwargs['double_frame_flag'] = double_frame_flag
         x0 = einops.reduce(
-            x0,'b c (i f)  h w -> b c f h w ', 'mean',
+            x0,'b c (f i)  h w -> b c f h w ', 'mean',
             i=frame_scale
             )
+        if double_frame_flag :
+            x0 = einops.reduce(
+                x0,'b c (f i) h w -> b c f h w ', 'mean',
+                i=2
+            )
+            x0 = x0.repeat_interleave(2,dim=2)
+        #        x0 = einops.reduce(
+        #     x0,'b c (f i)  h w -> b c f h w ', 'sum',
+        #     i=frame_scale
+        #     )
+        # x0 = x0/np.sqrt(frame_scale)
 
         # noise = torch.randn_like(x0) if noise is None else noise # [80, 4, 8, 32, 32]
         noise = self.sample_loss(x0, noise)
 
         xt = self.q_sample(x0, t, noise=noise)
-        xt_old = xt
-        if double_frame_flag :
-            xt = einops.reduce(
-                xt,'b c (i f) h w -> b c f h w ', 'mean',
-                i=2
-            )
-            xt = xt.repeat_interleave(2,dim=2)
+        # xt_old = xt
+        # if double_frame_flag :
+        #     xt = einops.reduce(
+        #         xt,'b c (f i) h w -> b c f h w ', 'mean',
+        #         i=2
+        #     )
+        #      xt = xt.repeat_interleave(2,dim=2)
 
         # compute loss
         if self.loss_type in ['kl', 'rescaled_kl']:
@@ -665,8 +677,8 @@ class DiffusionDDIM(object):
             target = {
                 'eps': noise,
                 'x0': x0,
-                'x_{t-1}': self.q_posterior_mean_variance(x0, xt_old, t)[0],
-                'v':_i(self.sqrt_alphas_cumprod, t, xt_old) * noise - _i(self.sqrt_one_minus_alphas_cumprod, t, xt_old) * x0}[self.mean_type]
+                'x_{t-1}': self.q_posterior_mean_variance(x0, xt, t)[0],
+                'v':_i(self.sqrt_alphas_cumprod, t, xt) * noise - _i(self.sqrt_one_minus_alphas_cumprod, t, xt) * x0}[self.mean_type]
             loss = (out - target).pow(1 if self.loss_type.endswith('l1') else 2).abs().flatten(1).mean(dim=1)
             if weight is not None:
                 loss = loss*weight
