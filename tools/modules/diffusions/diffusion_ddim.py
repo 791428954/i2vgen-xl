@@ -182,7 +182,7 @@ class DiffusionDDIM(object):
             xt, _ = self.p_sample(xt, t, model, model_kwargs, clamp, percentile, condition_fn, guide_scale)
         return xt
 
-    def p_mean_variance(self, xt, t, model, model_kwargs={}, clamp=None, percentile=None, guide_scale=None,double_frame_flag=False):
+    def p_mean_variance(self, xt, t, model, model_kwargs={}, clamp=None, percentile=None, guide_scale=None):
         r"""Distribution of p(x_{t-1} | x_t).
         """
         # predict distribution
@@ -192,10 +192,6 @@ class DiffusionDDIM(object):
             # classifier-free guidance
             # (model_kwargs[0]: conditional kwargs; model_kwargs[1]: non-conditional kwargs)
             assert isinstance(model_kwargs, list) and len(model_kwargs) == 2
-            # y_out = model(xt, self._scale_timesteps(t), **model_kwargs[0],double_frame_flag = double_frame_flag)
-            # u_out = model(xt, self._scale_timesteps(t), **model_kwargs[1],double_frame_flag = double_frame_flag).
-            if double_frame_flag:
-                xt=xt.repeat_interleave(2,dim=2)
             y_out = model(xt, self._scale_timesteps(t), **model_kwargs[0])
             u_out = model(xt, self._scale_timesteps(t), **model_kwargs[1])
             dim = y_out.size(1) if self.var_type.startswith('fixed') else y_out.size(1) // 2
@@ -349,9 +345,11 @@ class DiffusionDDIM(object):
         for index,step in enumerate(steps):
             t = torch.full((b, ), step, dtype=torch.long, device=xt.device)
             if index in double_indices:
-                xt, _ = self.ddim_shared_diff_sample(xt, t, model, model_kwargs, clamp, percentile, condition_fn, guide_scale, ddim_timesteps, eta,double_frame_flag=True)
-            else:
-                xt, _ = self.ddim_shared_diff_sample(xt, t, model, model_kwargs, clamp, percentile, condition_fn, guide_scale, ddim_timesteps, eta,double_frame_flag=False)
+                xt = xt.repeat_interleave(2,dim = 2)
+            xt, _ = self.ddim_sample(xt, t, model, model_kwargs, clamp, percentile, condition_fn, guide_scale, ddim_timesteps, eta)
+                # xt, _ = self.ddim_shared_diff_sample(xt, t, model, model_kwargs, clamp, percentile, condition_fn, guide_scale, ddim_timesteps, eta,double_frame_flag=True)
+            # else:
+            #     xt, _ = self.ddim_shared_diff_sample(xt, t, model, model_kwargs, clamp, percentile, condition_fn, guide_scale, ddim_timesteps, eta,double_frame_flag=False)
         return xt
 
 
@@ -626,7 +624,7 @@ class DiffusionDDIM(object):
         # for i in range(int(f/frame_scale)):
         #     x0_cache[:,:,i,:,:] = x0_split[i]
         # x0 = x0_cache
-        model_kwargs['double_frame_flag'] = double_frame_flag
+        # model_kwargs['double_frame_flag'] = double_frame_flag
         x0 = einops.reduce(
             x0,'b c (f i)  h w -> b c f h w ', 'mean',
             i=frame_scale

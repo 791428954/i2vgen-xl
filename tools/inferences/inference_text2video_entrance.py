@@ -2,6 +2,7 @@ import os
 import re
 import os.path as osp
 import sys
+import time
 sys.path.insert(0, '/'.join(osp.realpath(__file__).split('/')[:-4]))
 import json
 import math
@@ -38,20 +39,20 @@ def inference_text2video_entrance(cfg_update,  **kwargs):
             cfg[k].update(v)
         else:
             cfg[k] = v
-    
+
     if not 'MASTER_ADDR' in os.environ:
         os.environ['MASTER_ADDR']='localhost'
         os.environ['MASTER_PORT']= find_free_port()
-    cfg.pmi_rank = int(os.getenv('RANK', 0)) 
+    cfg.pmi_rank = int(os.getenv('RANK', 0))
     cfg.pmi_world_size = int(os.getenv('WORLD_SIZE', 1))
-    
+
     if cfg.debug:
         cfg.gpus_per_machine = 1
         cfg.world_size = 1
     else:
         cfg.gpus_per_machine = torch.cuda.device_count()
         cfg.world_size = cfg.pmi_world_size * cfg.gpus_per_machine
-    
+
     if cfg.world_size == 1:
         worker(0, cfg, cfg_update)
     else:
@@ -85,7 +86,7 @@ def worker(gpu, cfg, cfg_update):
     exp_name = osp.basename(cfg.test_list_path).split('.')[0]
     inf_name = osp.basename(cfg.cfg_file).split('.')[0]
     test_model = osp.basename(cfg.test_model).split('.')[0].split('_')[-1]
-    
+
     cfg.log_dir = osp.join(cfg.log_dir, '%s' % (exp_name))
     os.makedirs(cfg.log_dir, exist_ok=True)
     log_file = osp.join(cfg.log_dir, 'log_%02d.txt' % (cfg.rank))
@@ -99,16 +100,16 @@ def worker(gpu, cfg, cfg_update):
             logging.StreamHandler(stream=sys.stdout)])
     logging.info(cfg)
     logging.info(f"Going into inference_text2video_entrance inference on {gpu} gpu")
-    
+
     # [Diffusion]
     diffusion = DIFFUSION.build(cfg.Diffusion)
 
-    # [Data] Data Transform    
+    # [Data] Data Transform
     train_trans = data.Compose([
         data.CenterCropWide(size=cfg.resolution),
         data.ToTensor(),
         data.Normalize(mean=cfg.mean, std=cfg.std)])
-    
+
     vit_trans = data.Compose([
         data.CenterCropWide(size=(cfg.resolution[0], cfg.resolution[0])),
         data.Resize(cfg.vit_resolution),
@@ -122,14 +123,14 @@ def worker(gpu, cfg, cfg_update):
     _, _, zero_y_negative = clip_encoder(text=cfg.negative_prompt)
     zero_y, zero_y_negative = zero_y.detach(), zero_y_negative.detach()
 
-    # [Model] auotoencoder 
+    # [Model] auotoencoder
     autoencoder = AUTO_ENCODER.build(cfg.auto_encoder)
     autoencoder.eval() # freeze
     for param in autoencoder.parameters():
         param.requires_grad = False
     autoencoder.cuda()
-    
-    # [Model] UNet 
+
+    # [Model] UNet
     model = MODEL.build(cfg.UNet)
     state_dict = torch.load(cfg.test_model, map_location='cpu')
     if 'state_dict' in state_dict:
@@ -143,20 +144,20 @@ def worker(gpu, cfg, cfg_update):
     model.eval()
     model = DistributedDataParallel(model, device_ids=[gpu]) if not cfg.debug else model
     torch.cuda.empty_cache()
-    
+
     # [Test List]
     test_list = open(cfg.test_list_path).readlines()
     test_list = [item.strip() for item in test_list]
     num_videos = len(test_list)
     logging.info(f'There are {num_videos} videos. with {cfg.round} times')
     test_list = [item for item in test_list for _ in range(cfg.round)]
-    
+
     for idx, caption in enumerate(test_list):
         if caption.startswith('#'):
             logging.info(f'Skip {caption}')
             continue
         logging.info(f"[{idx}]/[{num_videos}] Begin to sample {caption} ...")
-        if caption == "": 
+        if caption == "":
             logging.info(f'Caption is null of {caption}, skip..')
             continue
 
@@ -180,6 +181,7 @@ def worker(gpu, cfg, cfg_update):
                 model_kwargs=[
                     {'y': y_words, 'fps': fps_tensor},
                     {'y': zero_y_negative, 'fps': fps_tensor}]
+                start_time = time.time()
                 video_data = diffusion.ddim_sample_loop(
                     noise=noise,
                     model=model.eval(),
@@ -187,7 +189,10 @@ def worker(gpu, cfg, cfg_update):
                     guide_scale=cfg.guide_scale,
                     ddim_timesteps=cfg.ddim_timesteps,
                     eta=0.0)
-        
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+                logging.info(f"代码执行时间：{elapsed_time} 秒")
+
         video_data = 1. / cfg.scale_factor * video_data # [1, 4, 32, 46]
         video_data = rearrange(video_data, 'b c f h w -> (b f) c h w')
         chunk_size = min(cfg.decoder_bs, video_data.shape[0])
@@ -198,7 +203,7 @@ def worker(gpu, cfg, cfg_update):
             decode_data.append(gen_frames)
         video_data = torch.cat(decode_data, dim=0)
         video_data = rearrange(video_data, '(b f) c h w -> b c f h w', b = cfg.batch_size)
-        
+
         text_size = cfg.resolution[-1]
         cap_name = re.sub(r'[^\w\s]', '', caption).replace(' ', '_')
         file_name = f'rank_{cfg.world_size:02d}_{cfg.rank:02d}_{idx:04d}_{cap_name}.mp4'
@@ -209,7 +214,7 @@ def worker(gpu, cfg, cfg_update):
             logging.info('Save video to dir %s:' % (local_path))
         except Exception as e:
             logging.info(f'Step: save text or video error with {e}')
-    
+
     logging.info('Congratulations! The inference is completed!')
     # synchronize to finish some processes
     if not cfg.debug:

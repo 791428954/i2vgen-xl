@@ -5,6 +5,7 @@ import sys
 sys.path.insert(0, '/'.join(osp.realpath(__file__).split('/')[:-4]))
 import json
 import math
+import time
 import torch
 import pynvml
 import logging
@@ -184,6 +185,7 @@ def worker(gpu, cfg, cfg_update):
                 model_kwargs=[
                     {'y': y_words, 'fps': fps_tensor},
                     {'y': zero_y_negative, 'fps': fps_tensor}]
+                start_time = time.time()
                 video_data = diffusion.ddim_shared_diff_sample_loop(
                     noise=noise,
                     model=model.eval(),
@@ -192,7 +194,9 @@ def worker(gpu, cfg, cfg_update):
                     ddim_timesteps=cfg.ddim_timesteps,
                     eta=0.0,
                     shared_diffusion_steps=cfg.shared_diffusion_steps)
-
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+                logging.info(f"代码执行时间：{elapsed_time} 秒")
         video_data = 1. / cfg.scale_factor * video_data # [1, 4, 32, 46]
         video_data = rearrange(video_data, 'b c f h w -> (b f) c h w')
         chunk_size = min(cfg.decoder_bs, video_data.shape[0])

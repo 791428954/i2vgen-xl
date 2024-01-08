@@ -95,7 +95,7 @@ def save_video_refimg_and_text(
                 for fid, frame in enumerate(images):
                     tpth = os.path.join(frame_dir, '%04d.png' % (fid+1))
                     cv2.imwrite(tpth, frame[:,:,::-1], [int(cv2.IMWRITE_JPEG_QUALITY), 100])
-                cmd = f'ffmpeg -y -f image2 -loglevel quiet -framerate {save_fps} -i {frame_dir}/%04d.png -vcodec libx264 -crf 17  -pix_fmt yuv420p {local_path}'
+                cmd = f'ffmpeg -y -f image2 -loglevel quiet -framerate {save_fps} -i {frame_dir}/%04d.png -vcodec libx264 -crf 17  {local_path}'
                 os.system(cmd); os.system(f'rm -rf {frame_dir}')
                 # os.system(f'rm -rf {local_path}')
             exception = None

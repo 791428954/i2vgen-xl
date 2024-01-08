@@ -298,36 +298,36 @@ def worker(gpu, cfg):
 
         if cfg.rank == 0 and step % cfg.log_interval == 0: # cfg.log_interval: 100
             logging.info(f'Step: {step}/{cfg.num_steps} Loss: {loss.item():.3f} scale: {scaler.get_scale():.1f} LR: {scheduler.get_lr():.7f} Double_frame_flag: {double_frame_flag}')
-        wandb.log({
-            "Loss":loss.item(),
-            "scale":scaler.get_scale(),
-            "LR":scheduler.get_lr()})
-        if double_frame_flag:
-            wandb.log({"double_Loss":loss.item()})
-        else:
-            wandb.log({'non_double_Loss':loss.item()})
+            wandb.log({
+                "Loss":loss.item(),
+                "scale":scaler.get_scale(),
+                "LR":scheduler.get_lr()})
+            if double_frame_flag:
+                wandb.log({"double_Loss":loss.item()})
+            else:
+                wandb.log({'non_double_Loss':loss.item()})
 
 
-        # # Visualization
-        # if step == resume_step or step == cfg.num_steps or step % cfg.viz_interval == 0:
-        #     with torch.no_grad():
-        #         try:
-        #             visual_kwards = [
-        #                 {
-        #                     'y': y_words_0[:viz_num],
-        #                     'fps': fps_tensor[:viz_num],
-        #                 },
-        #                 {
-        #                     'y': zero_y_negative.repeat(y_words_0.size(0), 1, 1),
-        #                     'fps': fps_tensor[:viz_num],
-        #                 }
-        #             ]
-        #             input_kwards = {
-        #                 'model': model, 'video_data': video_data[:viz_num], 'step': step,
-        #                 'ref_frame': ref_frame[:viz_num], 'captions': captions[:viz_num]}
-        #             visual_func.run(visual_kwards=visual_kwards, **input_kwards)
-        #         except Exception as e:
-        #             logging.info(f'Save videos with exception {e}')
+        # Visualization
+        if step == resume_step or step == cfg.num_steps or step % cfg.viz_interval == 0:
+            with torch.no_grad():
+                try:
+                    visual_kwards = [
+                        {
+                            'y': y_words_0[:viz_num],
+                            'fps': fps_tensor[:viz_num],
+                        },
+                        {
+                            'y': zero_y_negative.repeat(y_words_0.size(0), 1, 1),
+                            'fps': fps_tensor[:viz_num],
+                        }
+                    ]
+                    input_kwards = {
+                        'model': model, 'video_data': video_data[:viz_num], 'step': step,
+                        'ref_frame': ref_frame[:viz_num], 'captions': captions[:viz_num]}
+                    visual_func.run(visual_kwards=visual_kwards, **input_kwards)
+                except Exception as e:
+                    logging.info(f'Save videos with exception {e}')
 
         # Save checkpoint
         if step == cfg.num_steps or step % cfg.save_ckp_interval == 0 or step == resume_step:
