@@ -186,7 +186,7 @@ def worker(gpu, cfg, cfg_update):
                     {'y': y_words, 'fps': fps_tensor},
                     {'y': zero_y_negative, 'fps': fps_tensor}]
                 start_time = time.time()
-                video_data = diffusion.ddim_shared_diff_sample_loop(
+                video_data = diffusion.ddim_shared_diffnoise_sample_loop(
                     noise=noise,
                     model=model.eval(),
                     model_kwargs=model_kwargs,

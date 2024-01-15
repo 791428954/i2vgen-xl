@@ -245,6 +245,84 @@ class DiffusionDDIM(object):
 
         return mu, var, log_var, x0, xt
 
+    def p_mean_diffnoise_variance(self, xt, t, model, model_kwargs={}, clamp=None, percentile=None, guide_scale=None,frame_num = None):
+        r"""Distribution of p(x_{t-1} | x_t).
+        """
+        # predict distribution
+
+        f = xt.shape[2]
+        if t>900:
+            xt_input = einops.reduce(
+                xt,'b c (f i)  h w -> b c f h w ', 'sum',
+                i=int(16/frame_num)
+            )
+            xt_input = xt_input/np.sqrt(16/frame_num)
+        else:
+            xt_input = einops.reduce(
+                xt,'b c (f i)  h w -> b c f h w ', 'mean',
+                i=int(16/frame_num)
+                )
+        if guide_scale is None:
+            out = model(xt, self._scale_timesteps(t), **model_kwargs)
+        else:
+            # classifier-free guidance
+            # (model_kwargs[0]: conditional kwargs; model_kwargs[1]: non-conditional kwargs)
+            assert isinstance(model_kwargs, list) and len(model_kwargs) == 2
+            y_out = model(xt_input, self._scale_timesteps(t), **model_kwargs[0])
+            u_out = model(xt_input, self._scale_timesteps(t), **model_kwargs[1])
+            y_out = y_out.repeat_interleave(int(16/frame_num),dim=2)
+            u_out = u_out.repeat_interleave(int(16/frame_num),dim=2)
+            dim = y_out.size(1) if self.var_type.startswith('fixed') else y_out.size(1) // 2
+            out = torch.cat([
+                u_out[:, :dim] + guide_scale * (y_out[:, :dim] - u_out[:, :dim]),
+                y_out[:, dim:]], dim=1) # guide_scale=9.0
+
+        # compute variance
+        if self.var_type == 'learned':
+            out, log_var = out.chunk(2, dim=1)
+            var = torch.exp(log_var)
+        elif self.var_type == 'learned_range':
+            out, fraction = out.chunk(2, dim=1)
+            min_log_var = _i(self.posterior_log_variance_clipped, t, xt)
+            max_log_var = _i(torch.log(self.betas), t, xt)
+            fraction = (fraction + 1) / 2.0
+            log_var = fraction * max_log_var + (1 - fraction) * min_log_var
+            var = torch.exp(log_var)
+        elif self.var_type == 'fixed_large':
+            var = _i(torch.cat([self.posterior_variance[1:2], self.betas[1:]]), t, xt)
+            log_var = torch.log(var)
+        elif self.var_type == 'fixed_small':
+            var = _i(self.posterior_variance, t, xt)
+            log_var = _i(self.posterior_log_variance_clipped, t, xt)
+
+        # compute mean and x0
+
+        if self.mean_type == 'x_{t-1}':
+            mu = out  # x_{t-1}
+            x0 = _i(1.0 / self.posterior_mean_coef1, t, xt) * mu - \
+                 _i(self.posterior_mean_coef2 / self.posterior_mean_coef1, t, xt) * xt
+        elif self.mean_type == 'x0':
+            x0 = out
+            mu, _, _ = self.q_posterior_mean_variance(x0, xt, t)
+        elif self.mean_type == 'eps':
+            x0 = _i(self.sqrt_recip_alphas_cumprod, t, xt) * xt - \
+                 _i(self.sqrt_recipm1_alphas_cumprod, t, xt) * out
+            mu, _, _ = self.q_posterior_mean_variance(x0, xt, t)
+        elif self.mean_type == 'v':
+            x0 = _i(self.sqrt_alphas_cumprod, t, xt) * xt - \
+                 _i(self.sqrt_one_minus_alphas_cumprod, t, xt) * out
+            mu, _, _ = self.q_posterior_mean_variance(x0, xt, t)
+
+        # restrict the range of x0
+        if percentile is not None:
+            assert percentile > 0 and percentile <= 1  # e.g., 0.995
+            s = torch.quantile(x0.flatten(1).abs(), percentile, dim=1).clamp_(1.0).view(-1, 1, 1, 1)
+            x0 = torch.min(s, torch.max(-s, x0)) / s
+        elif clamp is not None:
+            x0 = x0.clamp(-clamp, clamp)
+
+        return mu, var, log_var, x0, xt
+
 
 
     @torch.no_grad()
@@ -281,6 +359,44 @@ class DiffusionDDIM(object):
         mask = t.ne(0).float().view(-1, *((1, ) * (xt.ndim - 1)))
         xt_1 = torch.sqrt(alphas_prev) * x0 + direction + mask * sigmas * noise
         return xt_1, x0
+
+
+    def ddim_sample_diffnoise(self, xt, t, model, model_kwargs={}, clamp=None, percentile=None, condition_fn=None, guide_scale=None, ddim_timesteps=20, eta=0.0,frame_num = 16):
+        r"""Sample from p(x_{t-1} | x_t) using DDIM.
+            - condition_fn: for classifier-based guidance (guided-diffusion).
+            - guide_scale: for classifier-free guidance (glide/dalle-2).
+        """
+        stride = self.num_timesteps // ddim_timesteps
+
+        # predict distribution of p(x_{t-1} | x_t)
+        _, _, _, x0, _ = self.p_mean_diffnoise_variance(xt, t, model, model_kwargs, clamp, percentile, guide_scale,frame_num)
+        if condition_fn is not None:
+            # x0 -> eps
+            alpha = _i(self.alphas_cumprod, t, xt)
+            eps = (_i(self.sqrt_recip_alphas_cumprod, t, xt) * xt - x0) / \
+                  _i(self.sqrt_recipm1_alphas_cumprod, t, xt)
+            eps = eps - (1 - alpha).sqrt() * condition_fn(xt, self._scale_timesteps(t), **model_kwargs)
+
+            # eps -> x0
+            x0 = _i(self.sqrt_recip_alphas_cumprod, t, xt) * xt - \
+                 _i(self.sqrt_recipm1_alphas_cumprod, t, xt) * eps
+
+        # derive variables
+        eps = (_i(self.sqrt_recip_alphas_cumprod, t, xt) * xt - x0) / \
+              _i(self.sqrt_recipm1_alphas_cumprod, t, xt)
+        alphas = _i(self.alphas_cumprod, t, xt)
+        alphas_prev = _i(self.alphas_cumprod, (t - stride).clamp(0), xt)
+        sigmas = eta * torch.sqrt((1 - alphas_prev) / (1 - alphas) * (1 - alphas / alphas_prev))
+
+        # random sample
+        noise = torch.randn_like(xt)
+        direction = torch.sqrt(1 - alphas_prev - sigmas ** 2) * eps
+        mask = t.ne(0).float().view(-1, *((1, ) * (xt.ndim - 1)))
+        xt_1 = torch.sqrt(alphas_prev) * x0 + direction + mask * sigmas * noise
+        return xt_1, x0
+
+
+
 
     def ddim_shared_diff_sample(self, xt, t, model, model_kwargs={}, clamp=None, percentile=None, condition_fn=None, guide_scale=None, ddim_timesteps=20, eta=0.0,double_frame_flag=False):
         r"""Sample from p(x_{t-1} | x_t) using DDIM.
@@ -330,9 +446,31 @@ class DiffusionDDIM(object):
             xt, _ = self.ddim_sample(xt, t, model, model_kwargs, clamp, percentile, condition_fn, guide_scale, ddim_timesteps, eta)
         return xt
 
-    def ddim_shared_diff_sample_loop(self, noise, model, model_kwargs={}, clamp=None, percentile=None, condition_fn=None, guide_scale=None, ddim_timesteps=20, eta=0.,shared_diffusion_steps= None):
+    def ddim_shared_diffnoise_sample_loop(self, noise, model, model_kwargs={}, clamp=None, percentile=None, condition_fn=None, guide_scale=None, ddim_timesteps=20, eta=0.,shared_diffusion_steps= None):
         # prepare input
         init_frames = 1
+        b = noise.size(0)
+        xt = noise
+
+        # diffusion process (TODO: clamp is inaccurate! Consider replacing the stride by explicit prev/next steps)
+        steps = (1 + torch.arange(0, self.num_timesteps, self.num_timesteps // ddim_timesteps)).clamp(0, self.num_timesteps - 1).flip(0)
+        double_indices = None
+        if shared_diffusion_steps:
+            double_indices = np.ceil((len(steps) * (1 - np.array(shared_diffusion_steps)[::-1]))).astype(np.int_)[1:-1]-1
+
+        for index,step in enumerate(steps):
+            t = torch.full((b, ), step, dtype=torch.long, device=xt.device)
+            if index in double_indices:
+                init_frames = init_frames * 2
+            xt, _ = self.ddim_sample_diffnoise(xt, t, model, model_kwargs, clamp, percentile, condition_fn, guide_scale, ddim_timesteps, eta,frame_num=init_frames)
+                # xt, _ = self.ddim_shared_diff_sample(xt, t, model, model_kwargs, clamp, percentile, condition_fn, guide_scale, ddim_timesteps, eta,double_frame_flag=True)
+            # else:
+            #     xt, _ = self.ddim_shared_diff_sample(xt, t, model, model_kwargs, clamp, percentile, condition_fn, guide_scale, ddim_timesteps, eta,double_frame_flag=False)
+        return xt
+
+    def ddim_shared_diff_sample_loop(self, noise, model, model_kwargs={}, clamp=None, percentile=None, condition_fn=None, guide_scale=None, ddim_timesteps=20, eta=0.,shared_diffusion_steps= None):
+        # prepare input
+        init_frame = 1
         b = noise.size(0)
         xt = noise[:,:,0:1,:,:]
 
@@ -343,6 +481,7 @@ class DiffusionDDIM(object):
             double_indices = np.ceil((len(steps) * (1 - np.array(shared_diffusion_steps)[::-1]))).astype(np.int_)[1:-1]-1
 
         for index,step in enumerate(steps):
+
             t = torch.full((b, ), step, dtype=torch.long, device=xt.device)
             if index in double_indices:
                 xt = xt.repeat_interleave(2,dim = 2)
@@ -612,29 +751,20 @@ class DiffusionDDIM(object):
         if index == 4:
             double_frame_flag = False
         else:
-            double_frame_flag = random.choice([True, False,True])
+            # double_frame_flag = random.choice([True, False,True])
+            double_frame_flag = True
 
         bsz,c,f,h,w = x0.shape
-        # # x0_half = torch.zeros(bsz,c,int(f/frame_scale),h,w).to(torch.device("cuda"))
-        # # for i in range(int(f/frame_scale)):
-        # x0_split = torch.split(x0, int(f/frame_scale), dim=2)
-        # for step, x0_item in enumerate(x0_split):
-        #     x0_split[step] = torch.Tensor().means(x0_item,dim = 2)
-        # x0_cache = torch.zeros(bsz,c,int(f/frame_scale),h,w).to(torch.device("cuda"))
-        # for i in range(int(f/frame_scale)):
-        #     x0_cache[:,:,i,:,:] = x0_split[i]
-        # x0 = x0_cache
-        # model_kwargs['double_frame_flag'] = double_frame_flag
-        x0 = einops.reduce(
-            x0,'b c (f i)  h w -> b c f h w ', 'mean',
-            i=frame_scale
-            )
-        if double_frame_flag :
-            x0 = einops.reduce(
-                x0,'b c (f i) h w -> b c f h w ', 'mean',
-                i=2
-            )
-            x0 = x0.repeat_interleave(2,dim=2)
+        # x0 = einops.reduce(
+        #     x0,'b c (f i)  h w -> b c f h w ', 'mean',
+        #     i=frame_scale
+        #     )
+        # if double_frame_flag :
+        #     x0 = einops.reduce(
+        #         x0,'b c (f i) h w -> b c f h w ', 'mean',
+        #         i=2
+        #     )
+        #     x0 = x0.repeat_interleave(2,dim=2)
         #        x0 = einops.reduce(
         #     x0,'b c (f i)  h w -> b c f h w ', 'sum',
         #     i=frame_scale
@@ -646,12 +776,23 @@ class DiffusionDDIM(object):
 
         xt = self.q_sample(x0, t, noise=noise)
         # xt_old = xt
-        # if double_frame_flag :
-        #     xt = einops.reduce(
-        #         xt,'b c (f i) h w -> b c f h w ', 'mean',
-        #         i=2
-        #     )
-        #      xt = xt.repeat_interleave(2,dim=2)
+        xt = einops.reduce(
+            xt,'b c (f i)  h w -> b c f h w ', 'mean',
+            i=frame_scale
+            )
+
+        if double_frame_flag :
+            xt = einops.reduce(
+                xt,'b c (f i) h w -> b c f h w ', 'mean',
+                i=2
+            )
+            xt = xt.repeat_interleave(2,dim=2)
+
+        noise = einops.reduce(
+                noise,'b c (f i) h w -> b c f h w ', 'sum',
+                i=int(16/xt.shape[2])
+            )
+        noise = noise/np.sqrt(int(16/xt.shape[2]))
 
         # compute loss
         if self.loss_type in ['kl', 'rescaled_kl']:
@@ -672,11 +813,7 @@ class DiffusionDDIM(object):
 
             # MSE/L1 for x0/eps
             # target = {'eps': noise, 'x0': x0, 'x_{t-1}': self.q_posterior_mean_variance(x0, xt, t)[0]}[self.mean_type]
-            target = {
-                'eps': noise,
-                'x0': x0,
-                'x_{t-1}': self.q_posterior_mean_variance(x0, xt, t)[0],
-                'v':_i(self.sqrt_alphas_cumprod, t, xt) * noise - _i(self.sqrt_one_minus_alphas_cumprod, t, xt) * x0}[self.mean_type]
+            target = noise
             loss = (out - target).pow(1 if self.loss_type.endswith('l1') else 2).abs().flatten(1).mean(dim=1)
             if weight is not None:
                 loss = loss*weight

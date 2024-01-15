@@ -8,6 +8,7 @@ import random
 import torch
 import logging
 import datetime
+import itertools
 import numpy as np
 from PIL import Image
 import torch.optim as optim
@@ -23,6 +24,10 @@ import torchvision.transforms as T
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data.distributed import DistributedSampler
+from lora_diffusion import inject_trainable_lora, extract_lora_ups_down,inject_trainable_lora_extended
+
+# from peft import LoraConfig
+# from peft.utils import get_peft_model_state_dict
 
 import utils.transforms as data
 from utils.util import to_device
@@ -61,6 +66,20 @@ def train_t2v_share_diffusion_enterance(cfg_update,  **kwargs):
     else:
         mp.spawn(worker, nprocs=cfg.gpus_per_machine, args=(cfg, ))
     return cfg
+
+def save_lora_weight(
+    model,
+    path,
+    target_replace_module
+):
+    weights = []
+    for _up, _down in extract_lora_ups_down(
+        model, target_replace_module=target_replace_module
+    ):
+        weights.append(_up.weight.to("cpu").to(torch.float16))
+        weights.append(_down.weight.to("cpu").to(torch.float16))
+
+    torch.save(weights, path)
 
 
 def worker(gpu, cfg):
@@ -167,6 +186,21 @@ def worker(gpu, cfg):
     # [Model] UNet
     model = MODEL.build(cfg.UNet, zero_y=zero_y_negative)
     model = model.to(gpu)
+    # turn off all of the gradients of unet, except for the trainable LoRA params.
+    # if cfg.if_lora:
+    #     unet_lora_config = LoraConfig(
+    #         r=cfg.lora_rank,
+    #         lora_alpha=cfg.lora_rank,
+    #         init_lora_weights="gaussian",
+    #         target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+    #     )
+    #     model.add_adapter(unet_lora_config)
+
+    #     # if cfg.mixed_precision == "fp16":
+    #     #     # only upcast trainable parameters (LoRA) into fp32
+    #     #     cast_training_params(model, dtype=torch.float32)
+
+    #     lora_layers = filter(lambda p: p.requires_grad, model.parameters())
 
     resume_step = 1
     model, resume_step = PRETRAIN.build(cfg.Pretrain, model=model)
@@ -178,7 +212,23 @@ def worker(gpu, cfg):
         ema = type(ema)([(k, ema[k].data.clone()) for k in list(ema.keys())[cfg.rank::cfg.world_size]])
 
     # optimizer
-    optimizer = optim.AdamW(params=model.parameters(),
+    # if cfg.lora:
+    #     optimizer = optim.AdamW(params=lora_layers.parameters(),
+    #         lr=cfg.lr, weight_decay=cfg.weight_decay)
+    # else:
+    if cfg.if_lora:
+        model.requires_grad_(False)
+        unet_lora_params, train_names = inject_trainable_lora_extended(
+            model,target_replace_module=None)
+        #
+        # for _up, _down in extract_lora_ups_down(model):
+        #     logging.info(f'Before training: Unet First Layer lora up{_up.weight.data}')
+        #     logging.info(f'Before training: Unet First Layer lora down{_down.weight.data}')
+        #     break
+        optimizer = optim.AdamW(itertools.chain(*unet_lora_params),
+                    lr=cfg.lr, weight_decay=cfg.weight_decay)
+    else:
+        optimizer = optim.AdamW(params=model.parameters(),
             lr=cfg.lr, weight_decay=cfg.weight_decay)
     scaler = amp.GradScaler(enabled=cfg.use_fp16)
     if cfg.use_fsdp:
@@ -229,7 +279,10 @@ def worker(gpu, cfg):
                 decode_data.append(latent_z) # [B, 4, 32, 56]
             video_data = torch.cat(decode_data,dim=0)
             video_data = rearrange(video_data, '(b f) c h w -> b c f h w', b = batch_size) # [B, 4, 16, 32, 56]
-        index = random.randint(0, 4)
+        if cfg.if_lora:
+            index = random.randint(0, 3)
+        else:
+            index = random.randint(0, 4)
         shart_timesteps = shared_diffusion_steps_list[index][0] * 1000
         end_timesteps = shared_diffusion_steps_list[index][1] * 1000
         # shart_timesteps,end_timesteps = map(float,)
@@ -306,28 +359,31 @@ def worker(gpu, cfg):
                 wandb.log({"double_Loss":loss.item()})
             else:
                 wandb.log({'non_double_Loss':loss.item()})
-
+            # for _up, _down in extract_lora_ups_down(model):
+            #     logging.info(f'First Unet Layers Up Weight is now :{_up.weight.data}')
+            #     logging.info(f'First Unet Layers Down Weight is now :{_down.weight.data}')
+            #     break
 
         # Visualization
-        if step == resume_step or step == cfg.num_steps or step % cfg.viz_interval == 0:
-            with torch.no_grad():
-                try:
-                    visual_kwards = [
-                        {
-                            'y': y_words_0[:viz_num],
-                            'fps': fps_tensor[:viz_num],
-                        },
-                        {
-                            'y': zero_y_negative.repeat(y_words_0.size(0), 1, 1),
-                            'fps': fps_tensor[:viz_num],
-                        }
-                    ]
-                    input_kwards = {
-                        'model': model, 'video_data': video_data[:viz_num], 'step': step,
-                        'ref_frame': ref_frame[:viz_num], 'captions': captions[:viz_num]}
-                    visual_func.run(visual_kwards=visual_kwards, **input_kwards)
-                except Exception as e:
-                    logging.info(f'Save videos with exception {e}')
+        # if step == resume_step or step == cfg.num_steps or step % cfg.viz_interval == 0:
+        #     with torch.no_grad():
+        #         try:
+        #             visual_kwards = [
+        #                 {
+        #                     'y': y_words_0[:viz_num],
+        #                     'fps': fps_tensor[:viz_num],
+        #                 },
+        #                 {
+        #                     'y': zero_y_negative.repeat(y_words_0.size(0), 1, 1),
+        #                     'fps': fps_tensor[:viz_num],
+        #                 }
+        #             ]
+        #             input_kwards = {
+        #                 'model': model, 'video_data': video_data[:viz_num], 'step': step,
+        #                 'ref_frame': ref_frame[:viz_num], 'captions': captions[:viz_num]}
+        #             visual_func.run(visual_kwards=visual_kwards, **input_kwards)
+        #         except Exception as e:
+        #             logging.info(f'Save videos with exception {e}')
 
         # Save checkpoint
         if step == cfg.num_steps or step % cfg.save_ckp_interval == 0 or step == resume_step:
@@ -343,10 +399,13 @@ def worker(gpu, cfg):
             if cfg.rank == 0:
                 local_model_path = osp.join(cfg.log_dir, f'checkpoints/non_ema_{step:08d}.pth')
                 logging.info(f'Begin to Save model to {local_model_path}')
-                save_dict = {
-                    'state_dict': model.module.state_dict() if not cfg.debug else model.state_dict(),
-                    'step': step}
-                torch.save(save_dict, local_model_path)
+                if cfg.if_lora:
+                    save_lora_weight(model, local_model_path,target_replace_module= None)
+                else:
+                    save_dict = {
+                        'state_dict': model.module.state_dict() if not cfg.debug else model.state_dict(),
+                        'step': step}
+                    torch.save(save_dict, local_model_path)
                 logging.info(f'Save model to {local_model_path}')
 
     if cfg.rank == 0:

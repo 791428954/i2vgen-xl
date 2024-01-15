@@ -1,7 +1,7 @@
 TASK_TYPE: train_t2v_share_diffusion_enterance
 ENABLE: true
 use_ema: false
-num_workers: 6
+num_workers: 12
 frame_lens: [16, 16, 16, 16, 16, 32, 32, 32]
 sample_fps: [8,  8,  16, 16, 16, 8,  16, 16]
 resolution: [448, 256]
@@ -70,7 +70,7 @@ batch_sizes: {
     "1": 32,
     "4": 8,
     "8": 4,
-    "16": 4,
+    "16": 8,
     "32": 2
 }
 visual_train: {
@@ -86,13 +86,14 @@ Pretrain: {
     'type': pretrain_specific_strategies,
     'fix_weight': False,
     'grad_scale': 0.5,
+    # 'resume_checkpoint': '/nfs/home/mengtianhui/sgh/i2vgen-xl/workspace/experiments/t2v_train_shared_diff/checkpoints/non_ema_00003000.pth',
     'resume_checkpoint': '../models/damo/text-to-video-synthesis/model_scope_0000000.pth',
     'sd_keys_path': '../models/damo/I2VGen-XL/stable_diffusion_image_key_temporal_attention_x1.json',
 }
 
 chunk_size: 4
 decoder_bs: 4
-lr: 0.00003
+lr: 0.0001
 
 
 noise_strength: 0.1
@@ -102,8 +103,8 @@ guide_scale: 3.0
 num_steps: 1000000
 
 use_zero_infer: True
-viz_interval: 200      # 200
-save_ckp_interval: 500   # 500
+viz_interval: 1000      # 200
+save_ckp_interval: 1000  # 500
 
 # Log
 log_dir: "workspace/experiments"
@@ -111,3 +112,6 @@ log_interval: 1
 seed: 8888
 
 debug: True
+
+if_lora: True
+lora_rank: 4

@@ -58,7 +58,7 @@ class VisualTrainTextToVideo(object):
             model_kwargs = self.prepare_model_kwargs(keys, visual_kwards)
             pre_name = '_'.join(keys)
             with amp.autocast(enabled=cfg.use_fp16):
-                video_data = self.diffusion.ddim_shared_diff_sample_loop(
+                video_data = self.diffusion.ddim_shared_diffnoise_sample_loop(
                     noise=noise.clone(),
                     model=model.eval(),
                     model_kwargs=model_kwargs,
