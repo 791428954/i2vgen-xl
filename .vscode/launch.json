@@ -10,9 +10,10 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": true,
+            "justMyCode": false,
             "args":[
                 "--cfg","configs/t2v_train_shared_diff.yaml"
+                // "--cfg","configs/t2v_train_shared_diff_lora.yaml"
                 // "--cfg","configs/t2v_infer_shared_diff.yaml"
             ]
         }

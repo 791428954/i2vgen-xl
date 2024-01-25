@@ -772,27 +772,53 @@ class DiffusionDDIM(object):
         # x0 = x0/np.sqrt(frame_scale)
 
         # noise = torch.randn_like(x0) if noise is None else noise # [80, 4, 8, 32, 32]
-        noise = self.sample_loss(x0, noise)
-
-        xt = self.q_sample(x0, t, noise=noise)
-        # xt_old = xt
-        xt = einops.reduce(
-            xt,'b c (f i)  h w -> b c f h w ', 'mean',
-            i=frame_scale
-            )
-
         if double_frame_flag :
+            frame_scale = frame_scale * 2
+            noise = self.sample_loss(x0, noise)
+            new_noise = noise * np.sqrt(int(frame_scale))
+            xt = self.q_sample(x0, t, noise=new_noise)
+        # xt_old = xt
             xt = einops.reduce(
-                xt,'b c (f i) h w -> b c f h w ', 'mean',
-                i=2
-            )
+                xt,'b c (f i)  h w -> b c f h w ', 'mean',
+                i=frame_scale
+                )
             xt = xt.repeat_interleave(2,dim=2)
-
-        noise = einops.reduce(
+            # noise = einops.reduce(
+            #     noise,'b c (f i) h w -> b c f h w ', 'mean',
+            #     i=int(frame_scale / 2)
+            #     )
+            noise = einops.reduce(
                 noise,'b c (f i) h w -> b c f h w ', 'sum',
-                i=int(16/xt.shape[2])
-            )
-        noise = noise/np.sqrt(int(16/xt.shape[2]))
+                i=int(frame_scale/2)
+                )
+            noise = noise/np.sqrt(int(frame_scale/2))
+        else:
+            noise = self.sample_loss(x0, noise)
+            noise = noise * np.sqrt(int(frame_scale))
+            xt = self.q_sample(x0, t, noise=noise)
+            xt = einops.reduce(
+                xt,'b c (f i)  h w -> b c f h w ', 'mean',
+                i=frame_scale
+                )
+            noise = einops.reduce(
+                    noise,'b c (f i) h w -> b c f h w ', 'mean',
+                    i=frame_scale
+                )
+
+
+
+        # if double_frame_flag :
+        #     xt = einops.reduce(
+        #         xt,'b c (f i) h w -> b c f h w ', 'mean',
+        #         i=2
+        #     )
+        #     xt = xt.repeat_interleave(2,dim=2)
+        # noise = noise*np.sqrt(int(2))
+        # noise = einops.reduce(
+        #         noise,'b c (f i) h w -> b c f h w ', 'sum',
+        #         i=int(16/xt.shape[2])
+        #     )
+        # noise = noise/np.sqrt(int(16/xt.shape[2]))
 
         # compute loss
         if self.loss_type in ['kl', 'rescaled_kl']:

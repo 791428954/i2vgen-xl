@@ -1,7 +1,7 @@
 TASK_TYPE: train_t2v_share_diffusion_enterance
 ENABLE: true
 use_ema: false
-num_workers: 6
+num_workers: 4
 frame_lens: [16, 16, 16, 16, 16, 32, 32, 32]
 sample_fps: [8,  8,  16, 16, 16, 8,  16, 16]
 resolution: [448, 256]
@@ -70,7 +70,7 @@ batch_sizes: {
     "1": 32,
     "4": 8,
     "8": 4,
-    "16": 32,
+    "16": 4,
     "32": 2
 }
 visual_train: {
@@ -87,7 +87,7 @@ Pretrain: {
     'fix_weight': False,
     'grad_scale': 0.5,
     # 'resume_checkpoint': '/nfs/home/mengtianhui/sgh/i2vgen-xl/workspace/experiments/t2v_train_shared_diff/checkpoints/non_ema_00003000.pth',
-    'resume_checkpoint': '../models/damo/text-to-video-synthesis/model_scope_0000000.pth',
+    'resume_checkpoint': '../models/damo/text-to-video-synthesis/model_scope_0000000.pt',
     'sd_keys_path': '../models/damo/I2VGen-XL/stable_diffusion_image_key_temporal_attention_x1.json',
 }
 
